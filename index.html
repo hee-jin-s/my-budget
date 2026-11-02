@@ -132,6 +132,24 @@ section.panel{margin-top:10px}
 .imp-row.off .mm,.imp-row.off .amt{opacity:.45}
 .imp-map{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;font-size:15px}
 .imp-map select{flex:1;max-width:65%}
+/* 생활비 달력 */
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin:4px 0 8px}
+.cal-w{font-size:11.5px;color:var(--muted);text-align:center;padding:2px 0}
+.cal-w.sun{color:var(--danger)}
+.cal-w.sat{color:var(--fixed)}
+.cal-d{border:0;background:transparent;color:var(--ink);border-radius:8px;height:46px;padding:5px 0 2px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:1px;font:inherit;cursor:pointer}
+.cal-d span{font-size:13.5px;line-height:1.2}
+.cal-d small{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1.3}
+.cal-d.lv1{background:color-mix(in srgb,var(--spend) 14%,transparent)}
+.cal-d.lv2{background:color-mix(in srgb,var(--spend) 28%,transparent)}
+.cal-d.lv3{background:color-mix(in srgb,var(--spend) 45%,transparent)}
+.cal-d.lv4{background:color-mix(in srgb,var(--spend) 65%,transparent)}
+.cal-d.lv3 small,.cal-d.lv4 small{color:var(--ink)}
+.cal-d.today span{font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.cal-d.sel{outline:2px solid var(--ink);outline-offset:-2px}
+.calbar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13.5px;color:var(--muted);padding:8px 10px;background:var(--paper);border-radius:8px;margin-bottom:6px}
+.calbar b{color:var(--ink);font-weight:600}
+.calall{border:0;background:var(--ink);color:var(--paper);font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:pointer;flex:none}
 button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--save);outline-offset:2px}
 .dot{width:8px;height:8px;border-radius:50%;flex:none}
 
@@ -237,6 +255,7 @@ let state = { months:{} };
 let cur = new Date(); cur.setDate(1);
 let store = null; // {load, save}
 let activeTab = "income";
+let selDay = null; // 생활비 달력에서 고른 날짜 (null = 전체)
 
 const emptyMonth = () => ({income:[],fixed:[],saving:[],spend:[]});
 const month = k => state.months[k] || (state.months[k] = emptyMonth());
@@ -347,7 +366,7 @@ function render(){
     const sec=document.createElement("section");
     sec.className="panel"; sec.setAttribute("role","tabpanel");
     sec.innerHTML=`<h2>${s.title}<small class="num">${won(sum(items))}</small></h2>
-      <p class="hint">${s.hint}</p><div class="breakdown num"></div><ul></ul>
+      <p class="hint">${s.hint}</p><div class="breakdown num"></div>${s.key==="spend"?`<div class="calwrap"></div>`:""}<ul></ul>
       <div class="add">
         <select aria-label="${s.title} 분류">${s.cats.map(c=>`<option>${c}</option>`).join("")}</select>
         <input class="n" placeholder="${s.ph}" aria-label="${s.title} 항목 이름">
@@ -357,8 +376,20 @@ function render(){
         <div class="preview num" aria-live="polite"></div>
       </div>`;
     const ul=sec.querySelector("ul");
-    if(!items.length) ul.innerHTML=`<li class="empty">아직 항목이 없어요.</li>`;
-    items.forEach(it=>{
+    let shown=items;
+    if(s.key==="spend"){
+      const cw=sec.querySelector(".calwrap");
+      const dated=items.filter(it=>(!it.freq||it.freq==="once") && it.day);
+      const rep=items.filter(it=>it.freq && it.freq!=="once");
+      shown = selDay ? dated.filter(it=>it.day===selDay) : [...items].sort((a,b)=>(b.day||0)-(a.day||0));
+      cw.innerHTML = calendarHTML(items) + (selDay
+        ? `<div class="calbar"><span><b>${cur.getMonth()+1}월 ${selDay}일</b> · ${shown.length}건 · <b class="num">${won(sum(shown))}</b></span><button class="calall">전체 보기</button></div>`
+        : `<div class="calbar"><span>날짜를 누르면 그날 쓴 내역만 보여요.${rep.length?` 반복 지출 ${rep.length}건은 전체 보기에서 확인할 수 있어요.`:""}</span></div>`);
+      cw.querySelectorAll(".cal-d").forEach(b=>b.onclick=()=>{ const d=+b.dataset.d; selDay = selDay===d ? null : d; render(); });
+      const all=cw.querySelector(".calall"); if(all) all.onclick=()=>{ selDay=null; render(); };
+    }
+    if(!shown.length) ul.innerHTML=`<li class="empty">${s.key==="spend"&&selDay?"이 날은 쓴 돈이 없어요.":"아직 항목이 없어요."}</li>`;
+    shown.forEach(it=>{
       const li=document.createElement("li");
       li.innerHTML=`<span class="dot" style="background:${s.color}"></span>
         ${s.dated?`<span class="date num">${it.day?it.day+"일":""}</span>`:""}
@@ -407,7 +438,7 @@ function render(){
       const name=nIn.value.trim()||sel.value;
       if(!amt){ aIn.focus(); return; }
       const it={id:uid(),name,amt,cat:sel.value,freq};
-      if(s.dated && freq==="once") it.day=new Date().getDate();
+      if(s.dated && freq==="once") it.day=selDay || new Date().getDate();
       m[s.key].push(it); persist(); render();
       const again=document.querySelector("#sections section input");
       again && again.focus({preventScroll:true});
@@ -514,8 +545,32 @@ document.getElementById("eye").onclick=()=>{
 };
 paintEye();
 
-document.getElementById("prev").onclick=()=>{ cur.setMonth(cur.getMonth()-1); render(); };
-document.getElementById("next").onclick=()=>{ cur.setMonth(cur.getMonth()+1); render(); };
+document.getElementById("prev").onclick=()=>{ cur.setMonth(cur.getMonth()-1); selDay=null; render(); };
+document.getElementById("next").onclick=()=>{ cur.setMonth(cur.getMonth()+1); selDay=null; render(); };
+
+/* ---------- 생활비 달력 ---------- */
+function kShort(v){
+  if(v>=10000) return (v/10000).toFixed(v>=100000?0:1).replace(/\.0$/,"")+"만";
+  return Math.max(1,Math.round(v/1000))+"천";
+}
+function calendarHTML(items){
+  const k=keyOf(cur), y=cur.getFullYear(), mo=cur.getMonth();
+  const days=monthDays(k), first=new Date(y,mo,1).getDay();
+  const tot={}, cnt={};
+  items.forEach(it=>{
+    if((!it.freq||it.freq==="once") && it.day){ tot[it.day]=(tot[it.day]||0)+(+it.amt||0); cnt[it.day]=(cnt[it.day]||0)+1; }
+  });
+  const max=Math.max(1,...Object.values(tot));
+  const now=new Date(), isThis=now.getFullYear()===y && now.getMonth()===mo;
+  let cells=["일","월","화","수","목","금","토"].map((w,i)=>`<div class="cal-w${i===0?" sun":i===6?" sat":""}">${w}</div>`).join("");
+  for(let i=0;i<first;i++) cells+=`<div></div>`;
+  for(let d=1;d<=days;d++){
+    const v=tot[d]||0, lvl=v?Math.min(4,Math.ceil(v/max*4)):0;
+    const label = v ? (hidden?"●":kShort(v)) : "";
+    cells+=`<button class="cal-d lv${lvl}${selDay===d?" sel":""}${isThis&&now.getDate()===d?" today":""}" data-d="${d}" aria-pressed="${selDay===d}" aria-label="${mo+1}월 ${d}일${v?` ${cnt[d]}건`:""}"><span>${d}</span><small>${label}</small></button>`;
+  }
+  return `<div class="cal">${cells}</div>`;
+}
 document.getElementById("copyPrev").onclick=()=>{
   const p=new Date(cur.getFullYear(), cur.getMonth()-1, 1);
   const src=state.months[keyOf(p)];
